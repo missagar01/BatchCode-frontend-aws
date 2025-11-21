@@ -1,120 +1,27 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { ClipboardList, LogOut, Menu, Database, ChevronDown, ChevronRight, X, Cog, Flame, FlaskConical, RefreshCw, Cylinder } from 'lucide-react'
+import { ClipboardList, LogOut, Menu, Database, ChevronDown, ChevronRight, X, Cog, Flame, FlaskConical, RefreshCw, Cylinder, PaintBucket, Amphora } from 'lucide-react'
+import { useAuth } from "../../AuthContext/AuthContext.jsx"
 
 export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const { user, logout } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isDataSubmenuOpen, setIsDataSubmenuOpen] = useState(false)
   const [isLicenseModalOpen, setIsLicenseModalOpen] = useState(false)
-  const [username, setUsername] = useState("")
-  const [userRole, setUserRole] = useState("")
-  const [userEmail, setUserEmail] = useState("")
-  const [stepName, setStepName] = useState("")
-
-  // Google Sheets configuration
-  const SHEET_ID = "10ysqz-TF7GjdP1F1XBu4mkjSITulzXTmnfxaNmeK6O4"
-  const SHEET_NAME = "master"
-
-  // Fetch stepName from Google Sheets - ONLY ONCE on component mount
-  const fetchStepName = useCallback(async () => {
-    const storedUsername = sessionStorage.getItem('username')
-    const storedRole = sessionStorage.getItem('role')
-
-    if (!storedUsername) {
-      console.error("No username found in session storage")
-      return
-    }
-
-    try {
-      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(SHEET_NAME)}`
-      const response = await fetch(url)
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch data: ${response.status}`)
-      }
-
-      let text = await response.text()
-      const jsonpStart = "google.visualization.Query.setResponse("
-      if (text.startsWith(jsonpStart)) {
-        text = text.substring(jsonpStart.length, text.length - 2)
-      } else {
-        const jsonStartIndex = text.indexOf('{')
-        const jsonEndIndex = text.lastIndexOf('}')
-        if (jsonStartIndex === -1 || jsonEndIndex === -1 || jsonEndIndex <= jsonStartIndex) {
-          throw new Error("Invalid response format from Google Sheets")
-        }
-        text = text.substring(jsonStartIndex, jsonEndIndex + 1)
-      }
-
-      const data = JSON.parse(text)
-
-      if (data.status === 'error' || !data.table || !data.table.rows) {
-        console.error("Error or no data in sheet:", data)
-        return
-      }
-
-      let userFound = false
-
-      // Search through all rows to find matching username
-      data.table.rows.forEach(row => {
-        if (userFound) return
-
-        const rowUsername = row.c[2]?.v  // Column C (index 2) - Username
-        const rowRole = row.c[4]?.v      // Column E (index 4) - Role
-        const rowStepName = row.c[7]?.v  // Column H (index 7) - StepName
-
-        if (rowUsername && rowUsername.toLowerCase() === storedUsername.toLowerCase()) {
-          // If role matches or no specific role check needed
-          if (!storedRole || (rowRole && rowRole.toLowerCase() === storedRole.toLowerCase())) {
-            setStepName(rowStepName || "")
-            userFound = true
-          }
-        }
-      })
-
-      if (!userFound) {
-        console.log("User not found or role mismatch in sheet")
-      }
-
-    } catch (error) {
-      console.error("Failed to fetch stepName:", error)
-    }
-  }, [])
-
-  // Check authentication on component mount and fetch stepName ONLY ONCE
-  useEffect(() => {
-    const storedUsername = sessionStorage.getItem('username')
-    const storedRole = sessionStorage.getItem('role')
-    const storedEmail = sessionStorage.getItem('email')
-
-    if (!storedUsername) {
-      // Redirect to login if not authenticated
-      navigate("/login")
-      return
-    }
-
-    setUsername(storedUsername)
-    setUserRole(storedRole || "user")
-    setUserEmail(storedEmail || `${storedUsername.toLowerCase()}@example.com`)
-
-    // Fetch stepName after setting user data - ONLY ONCE
-    fetchStepName()
-  }, [fetchStepName, navigate])
+  const username = user?.username || sessionStorage.getItem('username') || ""
+  const userRole = user?.role || sessionStorage.getItem('role') || "user"
+  const userEmail = `${username || "user"}@example.com`
 
   // Handle logout
   const handleLogout = () => {
-    sessionStorage.removeItem('username')
-    sessionStorage.removeItem('role')
-    sessionStorage.removeItem('department')
-    sessionStorage.removeItem('email')
+    logout()
     navigate("/login")
   }
 
-  // Filter dataCategories based on user role and stepName
   const dataCategories = [
     { id: "sales", name: "Checklist", link: "/dashboard/data/sales", stepRequired: "Checklist" },
   ]
@@ -127,6 +34,22 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
       active: location.pathname === "/dashboard/admin",
       showFor: ["admin", "user"],
       stepRequired: "Dashboard"
+    },
+    {
+      href: "/dashboard/laddel",
+      label: "Laddle Checklist",
+      icon: PaintBucket,
+      active: location.pathname === "/dashboard/laddel",
+      showFor: ["admin", "user"],
+      stepRequired: "SMS Register"
+    },
+    {
+      href: "/dashboard/tundis",
+      label: "Tundish Checklist",
+      icon: Amphora,
+      active: location.pathname === "/dashboard/tundis",
+      showFor: ["admin", "user"],
+      stepRequired: "SMS Register"
     },
     {
       href: "/dashboard/quick-task",
@@ -170,32 +93,14 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
     },
   ]
 
-  // ✅ FIXED: Check if user has access to a specific step
-  const hasAccessToStep = useCallback((requiredStep) => {
-    if (!stepName) return false
-
-    // Admin has access to everything
-    if (stepName === "all" || userRole === "admin") return true
-
-    // Split comma-separated values and check if requiredStep exists in the array
-    const userSteps = stepName.split(',').map(step => step.trim())
-    return userSteps.includes(requiredStep)
-  }, [stepName, userRole])
-
   const getAccessibleDepartments = () => {
-    const userRole = sessionStorage.getItem('role') || 'user'
     return dataCategories.filter(cat =>
-      (!cat.showFor || cat.showFor.includes(userRole)) &&
-      (!cat.stepRequired || hasAccessToStep(cat.stepRequired))
+      (!cat.showFor || cat.showFor.includes(userRole))
     )
   }
 
   const getAccessibleRoutes = () => {
-    const userRole = sessionStorage.getItem('role') || 'user'
-    const filteredRoutes = routes.filter(route =>
-      route.showFor.includes(userRole) &&
-      (!route.stepRequired || hasAccessToStep(route.stepRequired))
-    )
+    const filteredRoutes = routes.filter(route => route.showFor.includes(userRole))
 
     // Ensure dashboard is always first if accessible
     return filteredRoutes.sort((a, b) => {
@@ -306,13 +211,6 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
               </li>
             ))}
           </ul>
-
-          {/* Display current stepName for debugging */}
-          {stepName && (
-            <div className="mt-4 p-2 text-xs text-gray-600 border-t border-red-100">
-              {/* <p>Current Access: <span className="font-medium">{stepName}</span></p> */}
-            </div>
-          )}
         </nav>
         <div className="border-t border-red-200 p-4 bg-gradient-to-r from-red-50 to-white">
           <div className="flex items-center justify-between">
@@ -512,14 +410,14 @@ export default function AdminLayout({ children, darkMode, toggleDarkMode }) {
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-gradient-to-br from-red-50 to-white">
           {children}
           <div className="fixed md:left-64 left-0 right-0 bottom-0 py-1 px-4 bg-gradient-to-r from-red-400 to-red-500 text-white text-center text-sm shadow-md z-10">
-            <a
-              href="https://www.botivate.in/"
+            {/* <a
+              href="#"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:underline"
-            >
-              Powered by-<span className="font-semibold">Botivate</span>
-            </a>
+            > */}
+            Powered by-<span className="font-semibold">Botivate</span>
+
           </div>
         </main>
       </div>

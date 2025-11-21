@@ -1,28 +1,25 @@
-"use client"
-
 import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
+import { useAuth } from "../AuthContext/AuthContext.jsx"
 
 const LoginPage = () => {
   const navigate = useNavigate()
-  const [isDataLoading, setIsDataLoading] = useState(false)
-  const [isLoginLoading, setIsLoginLoading] = useState(false)
-  const [masterData, setMasterData] = useState({
-    userCredentials: {},
-    userRoles: {},
-    userEmails: {}
-  })
+  const { login, loading, isAuthenticated, user } = useAuth()
   const [formData, setFormData] = useState({
     username: "",
     password: "",
   })
   const [toast, setToast] = useState({ show: false, message: "", type: "" })
 
-  // Bubble animation component
+  useEffect(() => {
+    if (isAuthenticated()) {
+      navigate("/dashboard/admin", { replace: true })
+    }
+  }, [isAuthenticated, navigate, user])
+
   const BubbleBackground = () => {
     return (
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Animated bubbles */}
         {[...Array(15)].map((_, i) => (
           <div
             key={i}
@@ -41,14 +38,11 @@ const LoginPage = () => {
             }}
           />
         ))}
-
-        {/* Sunrise gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-red-100/20 via-orange-50/10 to-yellow-50/5" />
       </div>
     )
   }
 
-  // Add CSS animations to your global CSS or CSS module
   const style = `
     @keyframes float {
       0% {
@@ -75,76 +69,6 @@ const LoginPage = () => {
     }
   `
 
-  const isInactiveRole = (role) => {
-    if (!role) return false;
-    const normalizedRole = String(role).toLowerCase().trim();
-    return normalizedRole === "inactive" ||
-      normalizedRole === "in active" ||
-      normalizedRole === "inactiv" ||
-      normalizedRole === "in activ";
-  }
-
-  // Fetch master data on component mount
-  useEffect(() => {
-    const fetchMasterData = async () => {
-      const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyrZtxegD2OX7GaemWnETrXygr7ZBqHEM_n7VHtG8cGPjbILiQNAHtzJLfZ7rhhRRtE/exec"
-
-      try {
-        setIsDataLoading(true)
-        const SPREADSHEET_ID = "10ysqz-TF7GjdP1F1XBu4mkjSITulzXTmnfxaNmeK6O4"
-        const sheetUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=master`
-
-        const response = await fetch(sheetUrl)
-        const text = await response.text()
-        const jsonString = text.substring(47).slice(0, -2)
-        const data = JSON.parse(jsonString)
-
-        const userCredentials = {}
-        const userRoles = {}
-        const userEmails = {}
-
-        if (data.table && data.table.rows) {
-          for (let i = 1; i < data.table.rows.length; i++) {
-            const row = data.table.rows[i]
-            const username = row.c[2] ? String(row.c[2].v || '').trim().toLowerCase() : '';
-            const password = row.c[3] ? String(row.c[3].v || '').trim() : '';
-            const role = row.c[4] ? String(row.c[4].v || '').trim() : 'user';
-            const email = row.c[5] ? String(row.c[5].v || '').trim() : '';
-
-            if (username && password && password.trim() !== '') {
-              if (isInactiveRole(role)) {
-                continue;
-              }
-
-              const normalizedRole = role.toLowerCase();
-              userCredentials[username] = password;
-              userRoles[username] = normalizedRole;
-              userEmails[username] = email || `${username}@example.com`;
-            }
-          }
-        }
-
-        setMasterData({ userCredentials, userRoles, userEmails })
-
-      } catch (error) {
-        console.error("Error Fetching Master Data:", error)
-        try {
-          const fallbackResponse = await fetch(SCRIPT_URL, { method: 'GET' })
-          if (fallbackResponse.ok) {
-            showToast("Unable to load user data. Please contact administrator.", "error")
-          }
-        } catch (fallbackError) {
-          console.error("Fallback also failed:", fallbackError);
-        }
-        showToast(`Network error: ${error.message}. Please try again later.`, "error")
-      } finally {
-        setIsDataLoading(false)
-      }
-    }
-
-    fetchMasterData()
-  }, [])
-
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -152,52 +76,22 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    setIsLoginLoading(true)
 
-    try {
-      const trimmedUsername = formData.username.trim().toLowerCase()
-      const trimmedPassword = formData.password.trim()
+    if (!formData.username.trim() || !formData.password.trim()) {
+      showToast("Please enter both username and password", "error")
+      return
+    }
 
-      if (trimmedUsername in masterData.userCredentials) {
-        const correctPassword = masterData.userCredentials[trimmedUsername]
-        const userRole = masterData.userRoles[trimmedUsername]
-        const userEmail = masterData.userEmails[trimmedUsername]
+    const result = await login(formData)
 
-        if (correctPassword === trimmedPassword) {
-          sessionStorage.setItem('username', trimmedUsername)
-          const isAdmin = userRole === "admin";
-          sessionStorage.setItem('role', isAdmin ? 'admin' : 'user')
-          sessionStorage.setItem('email', userEmail)
-
-          if (isAdmin) {
-            sessionStorage.setItem('department', 'all')
-            sessionStorage.setItem('isAdmin', 'true')
-          } else {
-            sessionStorage.setItem('department', trimmedUsername)
-            sessionStorage.setItem('isAdmin', 'false')
-          }
-
-          navigate("/dashboard/admin")
-          showToast(`Login successful. Welcome, ${trimmedUsername}!`, "success")
-          return
-        } else {
-          showToast("Username or password is incorrect. Please try again.", "error")
-        }
-      } else {
-        showToast("Username or password is incorrect. Please try again.", "error")
-      }
-
-      console.error("Login Failed", {
-        usernameExists: trimmedUsername in masterData.userCredentials,
-        passwordMatch: (trimmedUsername in masterData.userCredentials) ?
-          "Password did not match" : 'Username not found',
-        userRole: masterData.userRoles[trimmedUsername] || 'No role'
-      })
-    } catch (error) {
-      console.error("Login Error:", error)
-      showToast(`Login failed: ${error.message}. Please try again.`, "error")
-    } finally {
-      setIsLoginLoading(false)
+    if (result.success) {
+      showToast(`Login successful! Welcome, ${result.user.username}`, "success")
+      // Redirect based on user role
+      setTimeout(() => {
+        navigate("/dashboard/admin")
+      }, 1000)
+    } else {
+      showToast(result.error, "error")
     }
   }
 
@@ -214,7 +108,6 @@ const LoginPage = () => {
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-red-50 via-orange-50 to-yellow-50 p-4 relative overflow-hidden">
         <BubbleBackground />
 
-        {/* Toast Notification at Top */}
         {toast.show && (
           <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg transition-all duration-300 z-50 min-w-80 text-center ${toast.type === "success"
             ? "bg-green-100 text-green-800 border-l-4 border-green-500"
@@ -240,13 +133,13 @@ const LoginPage = () => {
             <div className="space-y-2">
               <label htmlFor="username" className="flex items-center text-gray-700 font-medium">
                 <i className="fas fa-user h-4 w-4 mr-2"></i>
-                Username
+                Username or Employee ID
               </label>
               <input
                 id="username"
                 name="username"
                 type="text"
-                placeholder="Enter your username"
+                placeholder="Enter your username or employee ID"
                 required
                 value={formData.username}
                 onChange={handleChange}
@@ -275,23 +168,23 @@ const LoginPage = () => {
               <button
                 type="submit"
                 className="w-full py-3 px-4 bg-gradient-to-r from-red-500 to-red-500 hover:from-red-600 hover:to-red-500 text-white rounded-md font-medium disabled:opacity-50 transition-all duration-200 shadow-md hover:shadow-lg"
-                disabled={isLoginLoading || isDataLoading}
+                disabled={loading}
               >
-                {isLoginLoading ? "Logging in..." : isDataLoading ? "Loading..." : "Login"}
+                {loading ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Logging in...
+                  </div>
+                ) : (
+                  "Login"
+                )}
               </button>
             </div>
           </form>
         </div>
 
         <div className="fixed left-0 right-0 bottom-0 py-2 px-4 bg-gradient-to-r from-red-400 to-red-400 text-white text-center text-sm shadow-md z-10">
-          <a
-            href="https://www.botivate.in/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline"
-          >
-            Powered by-<span className="font-semibold">Botivate</span>
-          </a>
+          Powered by-<span className="font-semibold">Botivate</span>
         </div>
       </div>
     </>
